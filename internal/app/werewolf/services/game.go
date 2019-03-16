@@ -6,6 +6,7 @@ import (
 	"github.com/imrenagi/goes-werewolf/internal/app/werewolf"
 	"github.com/imrenagi/goes-werewolf/pkg/eventsource/sourcing"
 	"github.com/imrenagi/goes-werewolf/pkg/eventsource/storage"
+	"github.com/imrenagi/goes-werewolf/pkg/eventbus"
 )
 
 type EventRepository interface {
@@ -53,6 +54,9 @@ func (g GameService) storeAndPublishEvent(ctx context.Context, game werewolf.Gam
 
 	//todo dispatch events to all listener
 	//todo the listener can listen to the event and store the current state to database. use goroutine
+	for _, ev := range game.Events() {
+		eventbus.Publish(ev)
+	}
 
 	//remove all stored events in memory
 	game.Accept()

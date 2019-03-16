@@ -69,21 +69,15 @@ func NewGame(channelID, channelName, creatorID, creatorName string, platform str
 		Platform:    platform,
 	})
 
-	player := models.NewPlayer(creatorName, creatorID)
-
-	game.Apply(events.PlayerJoined{
-		Player: player,
-		GameID: game.ID,
-	})
-
 	return game, nil
 }
 
 func (g *Game) HandleGameInitialized(ev events.GameInitialized) {
 	g.ID = ev.GameID
-	g.Players = make([]models.Player, 0)
 	g.day = firstDay
 	g.State = states.NewInitialState(10 * time.Millisecond)
+	firstPlayer := models.NewPlayer(ev.CreatorName, ev.CreatorID)
+	g.Players = []models.Player{firstPlayer}
 }
 
 func (g *Game) HandlePlayerJoined(ev events.PlayerJoined) {
