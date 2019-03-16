@@ -2,12 +2,12 @@ package werewolf
 
 import (
 	"time"
-
 	"github.com/google/uuid"
+
 	"github.com/imrenagi/goes-werewolf/internal/app/werewolf/events"
 	"github.com/imrenagi/goes-werewolf/internal/app/werewolf/models"
 	"github.com/imrenagi/goes-werewolf/internal/app/werewolf/states"
-	"github.com/imrenagi/goes-werewolf/pkg/eventbus"
+	"github.com/imrenagi/goes-werewolf/pkg/eventsource/sourcing"
 )
 
 type GameDataService interface {
@@ -15,12 +15,16 @@ type GameDataService interface {
 	Update(game *Game) error
 }
 
+const firstDay = 1
+
 type Game struct {
-	ID string
+	sourcing.EventSource
 	states.Context
+
+	ID      string
 	State   states.State
 	Players []models.Player
-	Day     int
+	day     int
 
 	DS GameDataService
 }
@@ -34,7 +38,7 @@ func (g *Game) SetState(s states.State) {
 }
 
 func (g Game) GetDay() int {
-	return g.Day
+	return g.day
 }
 
 func (g *Game) Execute() {
@@ -45,26 +49,43 @@ func (g Game) GameID() string {
 	return g.ID
 }
 
-func NewGame() *Game {
-	return &Game{
-		State: states.NewInitialState(10 * time.Millisecond),
-	}
+func NewGameFromHistory(sourceId sourcing.EventSourceId, history []sourcing.Event) (*Game, error) {
+	game := new(Game)
+	game.EventSource = sourcing.CreateFromHistory(game, sourceId, history)
+	return game, nil
 }
 
-func (g *Game) ApplyInitializeGame(ev events.GameInitialized) {
+func NewGame(channelID, channelName, creatorID, creatorName string, platform string) (*Game, error) {
+	game := new(Game)
+	game.EventSource = sourcing.CreateNew(game)
 
-	g.ID = uuid.New().String()
-	g.Day = 1
-	g.Players := []models.Player{ev.}
-
-	eventbus.Publish(events.GameInitialized{
-
+	gameID := uuid.New().String()
+	game.Apply(events.GameInitialized{
+		GameID:      gameID,
+		ChannelID:   channelID,
+		ChannelName: channelName,
+		CreatorID:   creatorID,
+		CreatorName: creatorName,
+		Platform:    platform,
 	})
 
-	eventbus.Publish(events.PlayerJoined{
+	player := models.NewPlayer(creatorName, creatorID)
 
+	game.Apply(events.PlayerJoined{
+		Player: player,
+		GameID: game.ID,
 	})
 
+	return game, nil
+}
 
-	// g.DS = what need to be assigned to this?
+func (g *Game) HandleGameInitialized(ev events.GameInitialized) {
+	g.ID = ev.GameID
+	g.Players = make([]models.Player, 0)
+	g.day = firstDay
+	g.State = states.NewInitialState(10 * time.Millisecond)
+}
+
+func (g *Game) HandlePlayerJoined(ev events.PlayerJoined) {
+	g.Players = append(g.Players, ev.Player)
 }

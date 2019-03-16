@@ -1,11 +1,9 @@
 package commands
 
-import "github.com/imrenagi/goes-werewolf/internal/app/werewolf/models"
-
 type InitializeGame struct {
 	Platform  string
-	ChannelID string
-	Initiator models.Player
+	ChannelID, ChannelName string
+	CreatorID, CreatorName string
 }
 
 type CancelGame struct {
