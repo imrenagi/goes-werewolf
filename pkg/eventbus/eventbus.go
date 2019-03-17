@@ -13,58 +13,51 @@ type Publisher interface {
 	Publish(evt interface{})
 }
 
-type EventHandler interface {
-	// Stringer interface used to store the name of the event this subscriber is listening to.
-	fmt.Stringer
-
-	// ProcessData is the handler used to processed the data.
-	ProcessData(data interface{}) error
+type Subscriber interface {
+	HandleEvent(interface{}) error
+	SubscribeToEventType() reflect.Type
 }
 
-// Subscriber interface which will be used to directly handle the data coming from the observer.
-type Subscriber interface {
-	// Stringer interface used to store the name of the event this subscriber is listening to.
-	fmt.Stringer
+//NewSubscriber creates new defaultSubscriber
+func newSubscriber(ctx context.Context, subscriber Subscriber) *defaultSubscriber {
+	sub := defaultSubscriber{
+		Ctx:        ctx,
+		Subscriber: subscriber,
+	}
+	return &sub
+}
 
-	// Subscribe accepts observer.Stream and the handler function which will be used to pull and process
+// listener interface which will be used to directly handle the data coming from the observer.
+type listener interface {
+	// Listen accepts observer.Stream and the handler function which will be used to pull and process
 	// the incoming stream
-	Subscribe(stream observer.Stream) error
+	Listen(stream observer.Stream) error
 
 	// Unsubscribe stops the subscription.
 	Unsubscribe() error
 }
 
-// NewSubscriber creates new StandardSubscriber
-func NewSubscriber(ctx context.Context, handler EventHandler) *StandardSubscriber {
-	return &StandardSubscriber{
-		Ctx:     ctx,
-		Handler: handler,
-	}
-}
+// defaultSubscriber is the default listener which can be used to capture any event published by the publisher.
+// This struct requires EventName and Fn to be supplied. EventName is the name of the event that listener will
+// listen to. Fn is the function to handle every message from the listener.
+type defaultSubscriber struct {
+	listener
 
-// StandardSubscriber is the default subscriber which can be used to capture any event published by the publisher.
-// This struct requires EventName and Fn to be supplied. EventName is the name of the event that subscriber will
-// listen to. Fn is the function to handle every message from the subscriber.
-type StandardSubscriber struct {
+	// Handler contains the data processor and the event name this listener should care about.
 	Subscriber
+
 	// Context
 	Ctx context.Context
-	// Handler contains the data processor and the event name this subscriber should care about.
-	Handler EventHandler
+
 	// channel used to notify the end of subscription.
 	exit chan bool
 }
 
-// String return the name of the event
-func (s *StandardSubscriber) String() string {
-	return s.Handler.String()
-}
-
-// Subscribe listen directly to the go-observer stream.
-func (s *StandardSubscriber) Subscribe(stream observer.Stream) error {
+// Listen listen directly to the go-observer stream.
+func (s *defaultSubscriber) Listen(stream observer.Stream) error {
 breakLoop:
 	for {
-		if err := s.Handler.ProcessData(stream.Value()); err != nil {
+		if err := s.HandleEvent(stream.Value()); err != nil {
 			fmt.Printf("Got error : %s\n", err)
 		}
 		select {
@@ -81,7 +74,7 @@ breakLoop:
 }
 
 // Unsubscribe will stop the subscription.
-func (s *StandardSubscriber) Unsubscribe() error {
+func (s *defaultSubscriber) Unsubscribe() error {
 	if s.exit == nil {
 		s.exit = make(chan bool)
 	}
@@ -102,22 +95,24 @@ func init() {
 	observers = make(map[string]observer.Property)
 }
 
-// Attach creates a goroutine for every subscriber and
-func Attach(subs Subscriber) {
+//Attach creates a goroutine for every listener and
+func Attach(subscriber Subscriber) {
+	s := newSubscriber(context.Background(), subscriber)
+	subscribeToEventType := s.SubscribeToEventType().String()
+
 	mu.Lock()
 	defer mu.Unlock()
 
-	eventName := subs.String()
-	if observers[eventName] == nil {
+	if observers[subscribeToEventType] == nil {
 		//Initialize the property will empty struct
-		observers[eventName] = observer.NewProperty(struct{}{})
+		observers[subscribeToEventType] = observer.NewProperty(struct{}{})
 	}
 
-	go subs.Subscribe(observers[eventName].Observe())
+	go s.Listen(observers[subscribeToEventType].Observe())
 }
 
-// Detach detaches the subscriber from the publisher.
-func Detach(subs Subscriber) {
+// Detach detaches the listener from the publisher.
+func Detach(subs listener) {
 	subs.Unsubscribe()
 }
 
