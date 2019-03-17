@@ -53,12 +53,18 @@ type defaultSubscriber struct {
 	exit chan bool
 }
 
+func isZeroOfUnderlyingType(x interface{}) bool {
+	return x == reflect.Zero(reflect.TypeOf(x)).Interface()
+}
+
 // Listen listen directly to the go-observer stream.
 func (s *defaultSubscriber) Listen(stream observer.Stream) error {
 breakLoop:
 	for {
-		if err := s.HandleEvent(stream.Value()); err != nil {
-			fmt.Printf("Got error : %s\n", err)
+		if !isZeroOfUnderlyingType(stream.Value()) {
+			if err := s.HandleEvent(stream.Value()); err != nil {
+				fmt.Printf("Got error : %s\n", err)
+			}
 		}
 		select {
 		case _, isOpen := <-s.exit:
@@ -98,7 +104,7 @@ func init() {
 //Attach creates a goroutine for every listener and
 func Attach(subscriber Subscriber) {
 	s := newSubscriber(context.Background(), subscriber)
-	subscribeToEventType := s.SubscribeToEventType().String()
+	subscribeToEventType := GetTypeName(s.SubscribeToEventType())
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -120,17 +126,17 @@ func Detach(subs listener) {
 func Publish(evt interface{}) {
 	mu.RLock()
 	defer mu.RUnlock()
-	eventName := getType(evt)
+	eventName := GetTypeName(reflect.TypeOf(evt))
 	prop := observers[eventName]
 	if prop != nil {
 		prop.Update(evt)
 	}
 }
 
-func getType(myvar interface{}) string {
-	if t := reflect.TypeOf(myvar); t.Kind() == reflect.Ptr {
-		return t.Elem().Name()
+func GetTypeName(argType reflect.Type) string {
+	if argType.Kind() == reflect.Ptr {
+		return argType.Elem().Name()
 	} else {
-		return t.Name()
+		return argType.Name()
 	}
 }
